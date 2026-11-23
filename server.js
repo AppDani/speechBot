@@ -15,10 +15,25 @@ fs.mkdirSync(CACHE, { recursive: true });
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".svg": "image/svg+xml", ".mp3": "audio/mpeg", ".json": "application/json" };
 
-// config.json is re-read on every request, so edits apply without a restart
+// Settings come from config.json on your computer, or from environment variables on a host like Render.
+// config.json is re-read on every request, so edits apply without a restart.
+const VOICE_ENV = { "נועה": "VOICE_NOA", "דני": "VOICE_DANI", "אבי": "VOICE_AVI", "מאיה": "VOICE_MAYA", "יואב": "VOICE_YOAV" };
 function config() {
-  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); }
-  catch (e) { console.error("⚠️  לא הצלחתי לקרוא את config.json:", e.message); return {}; }
+  let c = {};
+  if (fs.existsSync(CONFIG_PATH)) {
+    try { c = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); }
+    catch (e) { console.error("⚠️  לא הצלחתי לקרוא את config.json:", e.message); }
+  }
+  const env = process.env;
+  c.anthropic = { ...(c.anthropic || {}) };
+  c.elevenlabs = { ...(c.elevenlabs || {}), voices: { ...(c.elevenlabs?.voices || {}) } };
+  if (env.ANTHROPIC_API_KEY) c.anthropic.apiKey = env.ANTHROPIC_API_KEY;
+  if (env.ANTHROPIC_MODEL) c.anthropic.model = env.ANTHROPIC_MODEL;
+  if (env.ELEVENLABS_API_KEY) c.elevenlabs.apiKey = env.ELEVENLABS_API_KEY;
+  if (env.ELEVENLABS_MODEL) c.elevenlabs.model = env.ELEVENLABS_MODEL;
+  for (const [name, key] of Object.entries(VOICE_ENV)) if (env[key]) c.elevenlabs.voices[name] = env[key];
+  if (env.APP_PASSWORD) c.password = env.APP_PASSWORD;
+  return c;
 }
 const isSet = v => typeof v === "string" && v.trim() !== "" && !/^PASTE|^הדביקי/i.test(v.trim());
 
@@ -99,8 +114,25 @@ function serveStatic(req, res) {
   });
 }
 
+// Optional password: set "password" in config.json or APP_PASSWORD on the host.
+// The browser asks for it once (any user name works) and remembers it.
+function authorized(req) {
+  const pw = config().password;
+  if (!isSet(pw)) return true;
+  const h = req.headers.authorization || "";
+  if (!h.startsWith("Basic ")) return false;
+  const decoded = Buffer.from(h.slice(6), "base64").toString("utf8");
+  const given = decoded.slice(decoded.indexOf(":") + 1);
+  const a = Buffer.from(given), b = Buffer.from(pw);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 const server = http.createServer(async (req, res) => {
   try {
+    if (!authorized(req)) {
+      res.writeHead(401, { "WWW-Authenticate": 'Basic realm="speechBot", charset="UTF-8"', "Content-Type": "text/plain; charset=utf-8" });
+      return res.end("נדרשת סיסמה");
+    }
     if (req.url === "/api/status") return await handleStatus(res);
     if (req.url === "/api/claude" && req.method === "POST") return await handleClaude(req, res);
     if (req.url === "/api/tts" && req.method === "POST") return await handleTts(req, res);
@@ -112,13 +144,16 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const port = config().port || 3000;
-server.listen(port, "127.0.0.1", () => {
+const onHost = !!process.env.PORT;            // Render and similar hosts set PORT
+const port = +process.env.PORT || config().port || 3000;
+server.listen(port, onHost ? "0.0.0.0" : "127.0.0.1", () => {
   const url = `http://localhost:${port}`;
   const c = config();
-  console.log(`\n📖 מספר הסיפורים פועל:  ${url}`);
+  console.log(`\n📖 מספר הסיפורים פועל:  ${onHost ? "port " + port : url}`);
   console.log(`   Anthropic (יצירת סיפורים): ${isSet(c.anthropic?.apiKey) ? "מחובר ✓" : "חסר מפתח ✗"}`);
   console.log(`   ElevenLabs (קולות):         ${isSet(c.elevenlabs?.apiKey) ? "מחובר ✓" : "חסר מפתח ✗"}`);
-  console.log("   לעצירה: Ctrl+C\n");
-  if (!process.env.NO_OPEN) exec((process.platform === "darwin" ? "open " : process.platform === "win32" ? "start " : "xdg-open ") + url);
+  console.log(`   סיסמה:                      ${isSet(c.password) ? "מוגדרת ✓" : "ללא"}`);
+  if (onHost && !isSet(c.password)) console.warn("⚠️  האתר פתוח לכולם. הגדירו APP_PASSWORD בהגדרות השרת.");
+  if (!onHost) console.log("   לעצירה: Ctrl+C\n");
+  if (!onHost && !process.env.NO_OPEN) exec((process.platform === "darwin" ? "open " : process.platform === "win32" ? "start " : "xdg-open ") + url);
 });

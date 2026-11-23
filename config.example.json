@@ -1,5 +1,6 @@
 {
   "port": 3000,
+  "password": "",
   "anthropic": {
     "apiKey": "PASTE_ANTHROPIC_API_KEY_HERE",
     "model": "claude-sonnet-5-5"
