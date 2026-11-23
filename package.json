@@ -1,0 +1,9 @@
+{
+  "name": "speechbot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "מספר הסיפורים הטיפולי - גרסה מקומית",
+  "type": "module",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

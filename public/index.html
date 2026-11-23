@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מספר הסיפורים הטיפולי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;600;700&family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: a narrator "stage" (face + speech bubble) on top, one calm card below that changes per step:
+   setup → story controls → question → free recall → session summary */
+:root{
+  --bg:#f3f5f1;
+  --surface:#ffffff;
+  --ink:#1f2a33;
+  --muted:#5b6872;
+  --line:#d9dfd8;
+  --accent:#2f6f62;
+  --accent-soft:#e2efe9;
+  --focus:#c98a1b;
+  --good:#2e7d4f;
+  --good-soft:#e5f3ea;
+  --warn:#9a5b12;
+  --warn-soft:#fbf0de;
+  --font-display:"Rubik", "Assistant", Arial, sans-serif;
+  --font-body:"Assistant", "Rubik", Arial, sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151b1f; --surface:#1e262b; --ink:#e8ede9; --muted:#a3b0b5; --line:#33403f;
+    --accent:#7cc5b3; --accent-soft:#22352f; --focus:#e9b04a;
+    --good:#7fd19f; --good-soft:#1f3328; --warn:#f0b866; --warn-soft:#3a2e1b;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#151b1f; --surface:#1e262b; --ink:#e8ede9; --muted:#a3b0b5; --line:#33403f;
+  --accent:#7cc5b3; --accent-soft:#22352f; --focus:#e9b04a;
+  --good:#7fd19f; --good-soft:#1f3328; --warn:#f0b866; --warn-soft:#3a2e1b;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:19px;line-height:1.6}
+.wrap{max-width:820px;margin:0 auto;padding:24px 18px 60px;display:flex;flex-direction:column;gap:20px}
+header h1{font-family:var(--font-display);font-size:28px;line-height:1.2;margin:0 0 4px;text-wrap:balance}
+header p{margin:0;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px}
+h2{font-family:var(--font-display);font-size:22px;margin:0 0 14px;text-wrap:balance}
+
+/* stage */
+.stage{display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:center}
+@media (max-width:560px){.stage{grid-template-columns:1fr;justify-items:center}}
+.face{width:200px;height:250px}
+.face svg{width:100%;height:100%;display:block;transform-origin:50% 90%}
+.bubble{position:relative;background:var(--surface);border:2px solid var(--accent);border-radius:18px;padding:16px 20px;min-height:110px;width:100%}
+.bubble::before{content:"";position:absolute;top:60px;right:-12px;width:20px;height:20px;background:var(--surface);border-right:2px solid var(--accent);border-top:2px solid var(--accent);transform:rotate(45deg)}
+@media (max-width:560px){.bubble::before{top:-12px;right:calc(50% - 10px);transform:rotate(-45deg)}}
+.who{display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:700;color:var(--accent);font-size:16px;margin-bottom:4px}
+.bubble-text{font-size:23px;line-height:1.75;margin:0;max-width:62ch}
+.bubble-text.masked{color:var(--muted);font-size:19px;font-style:italic}
+.speaking{display:inline-flex;align-items:center;gap:6px;font-size:15px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--accent);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+/* face animation */
+.portrait{position:relative;width:100%;height:100%;border-radius:18px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);transform-origin:50% 100%;transition:transform .9s ease}
+.portrait img,.portrait svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.portrait .patch,.portrait .vis,.portrait .lids{display:none}
+.face[data-v="v1"] .patch,.face[data-v="v2"] .patch,.face[data-v="v3"] .patch,.face[data-v="v4"] .patch,.face[data-v="smile"] .patch{display:inline}
+.face[data-v="v1"] .vis-v1,.face[data-v="v2"] .vis-v2,.face[data-v="v3"] .vis-v3,.face[data-v="v4"] .vis-v4,.face[data-v="smile"] .vis-smile{display:inline}
+.face.blink .lids{display:inline}
+
+/* forms */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:600px){.grid{grid-template-columns:1fr}}
+.field{display:flex;flex-direction:column;gap:8px}
+.field > label, .legend{font-weight:700}
+.hint{color:var(--muted);font-size:16px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:7px 15px;font:inherit;font-size:17px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700}
+input[type="text"],textarea,select{font:inherit;font-size:17px;color:var(--ink);background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;width:100%}
+textarea{min-height:120px;resize:vertical}
+input[type="range"]{width:100%;accent-color:var(--accent)}
+.rate-row{display:flex;justify-content:space-between;color:var(--muted);font-size:15px}
+.toggle{display:flex;align-items:flex-start;gap:10px;cursor:pointer}
+.toggle input{width:20px;height:20px;margin-top:5px;accent-color:var(--accent)}
+.btn{font:inherit;font-weight:700;font-size:18px;border-radius:12px;padding:12px 22px;cursor:pointer;border:2px solid var(--accent);background:var(--accent);color:var(--surface)}
+.btn.secondary{background:transparent;color:var(--accent)}
+.btn.ghost{background:transparent;border-color:var(--line);color:var(--ink)}
+.btn:disabled{opacity:.55;cursor:wait}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.note{background:var(--warn-soft);color:var(--ink);border-radius:10px;padding:10px 14px;font-size:16px}
+.status{font-size:17px;font-weight:600}
+.status.err{color:var(--warn)}
+.samples{display:flex;flex-wrap:wrap;gap:10px}
+.hidden{display:none !important}
+
+.progress{display:flex;gap:6px}
+.progress span{flex:1;height:6px;border-radius:3px;background:var(--line)}
+.progress span.done{background:var(--accent)}
+.progress span.now{background:var(--focus)}
+
+.q-type{display:inline-block;font-size:14px;font-weight:700;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:2px 12px;margin-bottom:12px}
+.options{display:flex;flex-direction:column;gap:10px}
+.opt{font:inherit;font-size:20px;text-align:right;padding:14px 16px;border-radius:12px;border:2px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.opt:hover:not(:disabled){border-color:var(--accent)}
+.opt.correct{border-color:var(--good);background:var(--good-soft)}
+.opt.wrong{border-color:var(--warn);background:var(--warn-soft)}
+.opt:disabled{cursor:default}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.stat b{display:block;font-family:var(--font-display);font-size:28px;font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:15px}
+table{width:100%;border-collapse:collapse;font-size:16px}
+th,td{text-align:right;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:14px;font-weight:700}
+.pill.ok{background:var(--good-soft);color:var(--good)}
+.pill.mid{background:var(--accent-soft);color:var(--accent)}
+.pill.no{background:var(--warn-soft);color:var(--warn)}
+.ai-feedback{white-space:pre-wrap;background:var(--accent-soft);border-radius:10px;padding:14px;font-size:18px}
+footer{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>מספר הסיפורים הטיפולי</h1>
+    <p>סיפור בהקראה, שאלות במהלכו ובסופו, וסיכום לתיעוד. לשילוב בטיפול קוגניטיבי בריפוי בעיסוק.</p>
+  </header>
+
+  <!-- NARRATOR STAGE -->
+  <section class="stage" aria-live="polite">
+    <div class="face" id="face" data-mood="neutral" data-v="rest" aria-hidden="true"></div>
+    <div class="bubble">
+      <div class="who"><span id="who"></span><span class="speaking hidden" id="speakingInd"><span class="dot"></span><span id="speakText">מדבר…</span></span></div>
+      <p class="bubble-text" id="bubble"></p>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section id="setup" class="card">
+    <h2>הגדרת המפגש</h2>
+    <div class="field" style="margin-bottom:18px">
+      <span class="legend" id="charLbl">מי מספר את הסיפור</span>
+      <div class="chips" id="characters" role="group" aria-labelledby="charLbl"></div>
+    </div>
+    <div class="field" style="margin-bottom:18px">
+      <span class="legend" id="topicLbl">נושא</span>
+      <div class="chips" id="topics" role="group" aria-labelledby="topicLbl"></div>
+      <input type="text" id="customTopic" placeholder="או נושא משלך, למשל: בישול ארוחת שישי, כדורגל, טיול בגליל">
+    </div>
+    <div class="grid">
+      <div class="field">
+        <span class="legend" id="diffLbl">רמת קושי</span>
+        <div class="chips" id="difficulty" role="group" aria-labelledby="diffLbl"></div>
+        <span class="hint" id="diffHint"></span>
+      </div>
+      <div class="field">
+        <span class="legend" id="lenLbl">אורך הסיפור</span>
+        <div class="chips" id="length" role="group" aria-labelledby="lenLbl"></div>
+        <span class="hint" id="lenHint"></span>
+      </div>
+      <div class="field">
+        <label for="rate">מהירות דיבור: <span id="rateVal"></span></label>
+        <input type="range" id="rate" min="0.7" max="1.3" step="0.05" value="0.9">
+        <div class="rate-row"><span>איטית</span><span>רגילה</span><span>מהירה</span></div>
+      </div>
+      <div class="field">
+        <label for="voice">קול</label>
+        <div class="row" style="flex-wrap:nowrap">
+          <select id="voice"></select>
+          <button class="btn ghost" id="testVoice" type="button" style="white-space:nowrap;padding:9px 14px;font-size:16px">נסה קול</button>
+        </div>
+        <span class="hint hidden" id="voiceNote"></span>
+      </div>
+    </div>
+    <div class="field" style="margin-top:18px;gap:12px">
+      <label class="toggle"><input type="checkbox" id="midQs" checked><span>שאלות גם במהלך הסיפור<br><span class="hint">בודק זיכרון מיידי וקשב לפרטים</span></span></label>
+      <label class="toggle"><input type="checkbox" id="showText" checked><span>להציג את הטקסט בבועה בזמן ההקראה<br><span class="hint">כבוי: תרגול זיכרון שמיעתי בלבד</span></span></label>
+      <label class="toggle"><input type="checkbox" id="recall" checked><span>שחזור חופשי בסוף: המטופל מספר את הסיפור במילים שלו</span></label>
+      <div class="field">
+        <label for="personal">התאמה אישית (לא חובה)</label>
+        <input type="text" id="personal" placeholder="למשל: אוהב דייג, גר בחיפה, עבד כנהג אוטובוס. בלי שם מלא או פרטים מזהים">
+      </div>
+    </div>
+    <div class="row" style="margin-top:20px">
+      <button class="btn" id="genBtn" type="button">צור סיפור חדש</button>
+      <span id="genStatus" class="status" role="status"></span>
+    </div>
+    <div id="noAI" class="note hidden" style="margin-top:14px"></div>
+    <div style="margin-top:18px" class="field">
+      <span class="legend">או התחל עם סיפור דוגמה</span>
+      <div class="samples" id="samples"></div>
+    </div>
+  </section>
+
+  <!-- STORY -->
+  <section id="storyView" class="card hidden">
+    <div class="progress" id="progress" aria-hidden="true"></div>
+    <h2 id="storyTitle" style="margin:14px 0"></h2>
+    <div class="row">
+      <button class="btn" id="nextBtn" type="button">המשך</button>
+      <button class="btn secondary" id="replayBtn" type="button">השמע שוב</button>
+      <button class="btn ghost" id="pauseBtn" type="button">השהה</button>
+      <button class="btn ghost" id="revealBtn" type="button">הצג טקסט</button>
+      <button class="btn ghost" id="quitBtn" type="button">יציאה</button>
+    </div>
+  </section>
+
+  <!-- QUESTION -->
+  <section id="questionView" class="card hidden">
+    <span class="q-type" id="qType"></span>
+    <div class="options" id="qOptions"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn hidden" id="qNext" type="button">המשך</button>
+      <button class="btn ghost" id="qRepeat" type="button">השמע את השאלה</button>
+    </div>
+  </section>
+
+  <!-- RECALL -->
+  <section id="recallView" class="card hidden">
+    <h2>שחזור הסיפור</h2>
+    <textarea id="recallText" aria-label="שחזור הסיפור" placeholder="מה קרה? מי היו הדמויות? מה קרה בסוף?"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="recallDone" type="button">סיימתי</button>
+      <button class="btn secondary hidden" id="micBtn" type="button">הכתבה בקול</button>
+      <button class="btn ghost" id="recallSkip" type="button">דלג</button>
+    </div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="summaryView" class="card hidden">
+    <h2>סיכום המפגש</h2>
+    <div class="stats" id="stats"></div>
+    <div id="aiFeedbackWrap" class="hidden" style="margin-top:18px">
+      <h2 style="font-size:19px">משוב על השחזור החופשי</h2>
+      <div class="ai-feedback" id="aiFeedback"></div>
+    </div>
+    <div style="overflow-x:auto;margin-top:18px"><table id="detailTable"></table></div>
+    <div class="row" style="margin-top:20px">
+      <button class="btn" id="copyBtn" type="button">העתק סיכום לתיעוד</button>
+      <button class="btn secondary" id="againBtn" type="button">אותו סיפור שוב</button>
+      <button class="btn ghost" id="newBtn" type="button">סיפור חדש</button>
+      <span class="hint" id="copyStatus" role="status"></span>
+    </div>
+  </section>
+
+  <footer>גרסה מקומית. איורי הדמויות: Freepik. כלי עזר לטיפול. אינו מחליף הערכה או שיקול דעת קליני. מומלץ לא להזין פרטים מזהים של מטופלים.</footer>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+
+/* ---------- narrator characters (from the user's character images) ---------- */
+const CHARACTERS = {
+  "נועה": {role:"מספרת סיפורים", g:"f", voice:"claude:airy", img:"img/noa.jpg", w:330, h:412, bg:"#f5e5e8",
+    mouth:{x:158,y:175.5,s:1.25,rx:16,ry:9,skin:"#de937c",lip:"#f07c73"},
+    eyes:[[130.5,135,13.5,11],[186.5,135,13.5,11]], eyeSkin:"#de9078", line:3},
+  "דני": {role:"מספר סיפורים", g:"m", voice:"claude:buttery", img:"img/dani.jpg", w:260, h:325, bg:"#bda69e",
+    mouth:{x:153.5,y:155.5,s:1,rx:15,ry:8,skin:"#fcc0a4",lip:"#e48b78"},
+    eyes:[[135.5,123.5,8.5,8.5],[171.5,122.5,8.5,8.5]], eyeSkin:"#f6c2aa", line:2.5},
+  "אבי": {role:"מספר סיפורים", g:"m", voice:"claude:buttery", img:"img/avi.jpg", w:190, h:237, bg:"#d5cccd",
+    mouth:{x:94,y:120.5,s:.8,rx:13,ry:5.8,skin:"#f3a496",lip:"#d9786c"},
+    eyes:[[75,84.5,6,5.5],[110.5,84.5,6,5.5]], eyeSkin:"#eca598", line:2},
+  "מאיה": {role:"מספרת סיפורים", g:"f", voice:"claude:glassy", img:"img/maya.jpg", w:241, h:301, bg:"#d5cccd",
+    mouth:{x:121,y:121,s:.95,rx:19,ry:6.5,skin:"#f4a296",lip:"#d9786c"},
+    eyes:[[100,93,6,6],[141,93,6,6]], eyeSkin:"#f6a49a", line:2},
+  "יואב": {role:"מספר סיפורים", g:"m", voice:"claude:buttery", img:"img/yoav.jpg", w:220, h:275, bg:"#ffffff",
+    mouth:{x:109,y:146.5,s:.95,rx:13,ry:6,skin:"#ffbc99",lip:"#e48b78"},
+    eyes:[[88,110,7,11],[136,110,7,11]], eyeSkin:"#ffbb98", line:2.2}
+};
+function portraitHTML(c){
+  const m=c.mouth, dark="#6e1f2b", ring=c.g==="f"?` stroke="${m.lip}" stroke-width="1.6"`:"";
+  return `<div class="portrait" style="background:${c.bg}">
+  <img src="${c.img}" alt="">
+  <svg viewBox="0 0 ${c.w} ${c.h}" xmlns="http://www.w3.org/2000/svg">
+    <g class="lids">${c.eyes.map(([x,y,rx,ry])=>`<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" fill="${c.eyeSkin}"/><path d="M${x-rx*.8} ${y+1} Q${x} ${y+ry*.45} ${x+rx*.8} ${y+1}" stroke="#1d1d1f" stroke-width="${c.line}" fill="none" stroke-linecap="round"/>`).join("")}</g>
+    <ellipse class="patch" cx="${m.x}" cy="${m.y}" rx="${m.rx}" ry="${m.ry}" fill="${m.skin}"/>
+    <g transform="translate(${m.x} ${m.y}) scale(${m.s})">
+      <g class="vis vis-v1"><ellipse cx="0" cy="0" rx="5" ry="2.2" fill="${dark}"${ring}/></g>
+      <g class="vis vis-v2"><ellipse cx="0" cy=".5" rx="6" ry="5" fill="${dark}"${ring}/><ellipse cx="0" cy="3.4" rx="3.4" ry="1.7" fill="#ef7a7f"/></g>
+      <g class="vis vis-v3"><ellipse cx="0" cy="0" rx="8.5" ry="3.4" fill="${dark}"${ring}/><rect x="-6" y="-3.2" width="12" height="2" rx="1" fill="#fff"/></g>
+      <g class="vis vis-v4"><ellipse cx="0" cy=".5" rx="4" ry="4.6" fill="${dark}"${ring}/></g>
+      <g class="vis vis-smile" transform="scale(1.3)"><path d="M-11 -3.5 Q0 11 11 -3.5Z" fill="${dark}"${ring}/><path d="M-9.5 -3 L9.5 -3 L8 0 Q0 1.5 -8 0Z" fill="#fff"/><ellipse cx="0" cy="5" rx="4" ry="1.8" fill="#ef7a7f"/></g>
+    </g>
+  </svg></div>`;
+}
+let character="נועה";
+const G=(f,m)=>CHARACTERS[character].g==="f"?f:m;
+const faceEl=$("face");
+const reduceMotion=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+let speakingNow=false, visTimer=null, headTimer=null;
+function restVis(){return faceEl.dataset.mood==="happy"?"smile":"rest";}
+function renderFace(){ faceEl.innerHTML=portraitHTML(CHARACTERS[character]); faceEl.dataset.v=restVis(); headPose(); $("who").textContent=character+" · "+CHARACTERS[character].role; $("speakText").textContent=G("מדברת…","מדבר…"); }
+function headPose(){
+  const h=faceEl.querySelector(".portrait"); if(!h) return;
+  const m=faceEl.dataset.mood; let r=m==="think"?-2:m==="encourage"?2:0, y=0;
+  if(speakingNow&&!reduceMotion){ r+=Math.random()*1.6-.8; y=Math.random()*2-1; }
+  h.style.transform=`translateY(${y}px) rotate(${r}deg)`;
+}
+function mood(m){ faceEl.dataset.mood=m; if(!speakingNow) faceEl.dataset.v=restVis(); headPose(); }
+function setSpeaking(on){
+  $("speakingInd").classList.toggle("hidden",!on);
+  if(on===speakingNow) return;
+  speakingNow=on; clearInterval(visTimer); clearInterval(headTimer);
+  if(on){
+    const seq=["v1","v2","v3","v2","v4","v1","v2","v3","v1","rest"];
+    let last="";
+    visTimer=setInterval(()=>{ let v;
+      if(ampFn){ const a=ampFn(); v=a<.012?"rest":a<.04?"v1":a<.09?(Math.random()<.5?"v2":"v4"):(Math.random()<.5?"v3":"v2"); }
+      else { v=seq[Math.floor(Math.random()*seq.length)]; if(v===last) v="v1"; }
+      last=v; faceEl.dataset.v=v; }, reduceMotion?220:(typeof ampFn==="function"?70:115));
+    if(!reduceMotion) headTimer=setInterval(headPose,1300);
+  } else { faceEl.dataset.v=restVis(); headPose(); }
+}
+(function blinkLoop(){ setTimeout(()=>{ faceEl.classList.add("blink"); setTimeout(()=>faceEl.classList.remove("blink"),130); if(Math.random()<.15) setTimeout(()=>{faceEl.classList.add("blink"); setTimeout(()=>faceEl.classList.remove("blink"),130);},260); blinkLoop(); }, 2200+Math.random()*3800); })();
+function say(text,{masked=false}={}){ $("bubble").textContent=text; $("bubble").classList.toggle("masked",masked); }
+
+/* ---------- settings ---------- */
+const TOPICS = ["חיי יומיום","קניות ובישול","טבע וטיולים","משפחה וחברים","עבודה ומקצועות","מעשייה עממית","חגים ומסורת","בעלי חיים","הומור קליל","נסיעה ותיירות"];
+const DIFFS = {
+  "קל":{hint:"משפטים קצרים, 1–2 דמויות, שאלות על פרטים מפורשים, 3 תשובות", opts:3},
+  "בינוני":{hint:"2–3 דמויות, פרטי זמן ומקום, שאלות פרטים ורצף, 3 תשובות", opts:3},
+  "מאתגר":{hint:"3–4 דמויות, שמות ומספרים, שאלות רצף והסקה, 4 תשובות", opts:4}
+};
+const LENGTHS = {
+  "קצר":{hint:"כ-3 קטעים, כדקה וחצי הקראה", segs:3, words:"40–55", finals:3},
+  "בינוני":{hint:"כ-5 קטעים, כ-3 דקות", segs:5, words:"50–65", finals:4},
+  "ארוך":{hint:"כ-7 קטעים, כ-5 דקות", segs:7, words:"60–75", finals:5}
+};
+const settings = {topic:TOPICS[0], diff:"קל", len:"קצר", character:"נועה"};
+
+function chipGroup(el, items, key, onPick){
+  el.innerHTML="";
+  items.forEach(name=>{
+    const b=document.createElement("button");
+    b.type="button"; b.className="chip"; b.textContent=name;
+    b.setAttribute("aria-pressed", settings[key]===name);
+    b.onclick=()=>{settings[key]=name;[...el.children].forEach(c=>c.setAttribute("aria-pressed",c===b));onPick&&onPick(name);};
+    el.appendChild(b);
+  });
+}
+function greet(){ mood("happy"); say(`שלום, אני ${character}. בחרו נושא, רמה ואורך, ואספר לכם סיפור. נעצור מדי פעם לכמה שאלות.`); }
+chipGroup($("characters"),Object.keys(CHARACTERS),"character",n=>{character=n; $("voice").value=defaultVoice(n); voiceNote(); renderFace(); greet();});
+chipGroup($("topics"),TOPICS,"topic",()=>{$("customTopic").value="";});
+chipGroup($("difficulty"),Object.keys(DIFFS),"diff",updHints);
+chipGroup($("length"),Object.keys(LENGTHS),"len",updHints);
+function updHints(){$("diffHint").textContent=DIFFS[settings.diff].hint;$("lenHint").textContent=LENGTHS[settings.len].hint;}
+updHints(); renderFace(); greet();
+function rateLabel(r){r=+r; if(r<0.8)return "איטית מאוד"; if(r<0.95)return "איטית"; if(r<1.1)return "רגילה"; return "מהירה";}
+function updRate(){const v=+$("rate").value; $("rateVal").textContent=rateLabel(v)+" ("+v.toFixed(2)+")";}
+$("rate").oninput=updRate;
+
+/* ---------- sample stories ---------- */
+const SAMPLE_STORIES = [
+ {title:"יום שוק של רינה", level:"קל", topic:"קניות ובישול",
+  segments:[
+   {text:"בבוקר יום שישי רינה קמה מוקדם. השמש כבר זרחה, והיא החליטה ללכת לשוק. היא לקחה סל קש כחול ויצאה מהבית.",
+    question:{q:"באיזה יום רינה הלכה לשוק?",options:["ביום שישי","ביום שני","בשבת"],answer:0,type:"פרטים"}},
+   {text:"בשוק היו הרבה אנשים. רינה קנתה עגבניות אדומות, מלפפונים ובננות. המוכר נתן לה גם לימון אחד במתנה.",
+    question:{q:"מה המוכר נתן לרינה במתנה?",options:["לימון","תפוח","בננה"],answer:0,type:"פרטים"}},
+   {text:"בדרך הביתה רינה פגשה את השכן שלה, משה. הוא סיפר לה שהנכדה שלו באה לבקר. רינה הזמינה את שניהם לשתות תה אחר הצהריים.", question:null},
+   {text:"אחר הצהריים משה והנכדה הגיעו. רינה הגישה תה עם לימון ועוגת בננות שאפתה. כולם צחקו ונהנו.", question:null}
+  ],
+  final:[
+   {q:"מה רינה לקחה איתה לשוק?",options:["סל קש כחול","תיק גב","עגלת קניות"],answer:0,type:"פרטים"},
+   {q:"את מי רינה פגשה בדרך הביתה?",options:["את השכן משה","את אחותה","את המוכר"],answer:0,type:"פרטים"},
+   {q:"מה רינה עשתה קודם?",options:["הלכה לשוק","הגישה תה","הזמינה את משה"],answer:0,type:"רצף"},
+   {q:"למה כנראה רינה הגישה תה עם לימון?",options:["כי קיבלה לימון במתנה בשוק","כי משה ביקש","כי אין לה סוכר"],answer:0,type:"הסקה"}
+  ],
+  keyPoints:["רינה הלכה לשוק ביום שישי עם סל כחול","קנתה עגבניות, מלפפונים ובננות וקיבלה לימון במתנה","פגשה את השכן משה שהנכדה שלו באה לבקר","הזמינה אותם לתה","הגישה תה עם לימון ועוגת בננות"]
+ },
+ {title:"המעיל של יוסף החייט", level:"בינוני", topic:"מעשייה עממית",
+  segments:[
+   {text:"בעיירה קטנה גר חייט בשם יוסף. היה לו מעיל ישן ואהוב, שתפר בעצמו לפני שנים רבות. עם הזמן המעיל נקרע במרפקים ובשוליים.",
+    question:{q:"מה היה המקצוע של יוסף?",options:["חייט","נגר","אופה"],answer:0,type:"פרטים"}},
+   {text:"יוסף לא זרק את המעיל. הוא גזר את החלקים הטובים ותפר מהם ז'קט קצר. עם הז'קט הוא הלך לשוק ולבית הכנסת במשך כמה שנים.", question:null},
+   {text:"כשהז'קט התבלה, יוסף תפר ממנו אפודה. כשגם האפודה התבלתה, הוא תפר ממנה עניבה, ואת העניבה לבש בחתונה של האחיין שלו.",
+    question:{q:"לאן יוסף לבש את העניבה?",options:["לחתונה של האחיין שלו","לשוק","ליום הולדת של חבר"],answer:0,type:"פרטים"}},
+   {text:"בסוף נשאר מהעניבה רק כפתור אחד קטן. יוסף שם אותו בכיס, אבל יום אחד הכפתור אבד. יוסף ישב וחשב: מה אפשר לעשות כשלא נשאר כלום?", question:null},
+   {text:"ואז הוא הבין: מכל מה שקרה אפשר לכתוב סיפור. הוא כתב את הסיפור על המעיל שלו, וכך המעיל נשאר איתו לתמיד.",
+    question:{q:"מה יוסף עשה אחרי שהכפתור אבד?",options:["כתב סיפור","קנה מעיל חדש","חיפש את הכפתור בשוק"],answer:0,type:"פרטים"}}
+  ],
+  final:[
+   {q:"מה יוסף תפר מיד אחרי הז'קט?",options:["אפודה","עניבה","כובע"],answer:0,type:"רצף"},
+   {q:"מה נשאר בסוף מהמעיל?",options:["כפתור","כיס","שרוול"],answer:0,type:"פרטים"},
+   {q:"איפה המעיל נקרע?",options:["במרפקים ובשוליים","בצווארון","בכיסים"],answer:0,type:"פרטים"},
+   {q:"מה המסר של הסיפור?",options:["אפשר למצוא ערך גם במעט שנשאר","כדאי לקנות בגדים חדשים","אסור לאבד כפתורים"],answer:0,type:"הסקה"}
+  ],
+  keyPoints:["ליוסף החייט היה מעיל ישן שנקרע","תפר ממנו ז'קט","מהז'קט אפודה, מהאפודה עניבה לחתונת האחיין","נשאר כפתור שאבד","כתב סיפור על המעיל וכך שמר אותו"]
+ }
+];
+SAMPLE_STORIES.forEach(s=>{
+  const b=document.createElement("button");b.className="btn ghost";b.type="button";
+  b.textContent=s.title+" · "+s.level; b.onclick=()=>startStory(JSON.parse(JSON.stringify(s)));
+  $("samples").appendChild(b);
+});
+
+/* ---------- local server status ---------- */
+const tts=null;
+let status={anthropic:false,elevenlabs:false,voices:{}};
+function showNoAI(){
+  $("noAI").textContent="כדי ליצור סיפורים חדשים צריך להדביק מפתח Anthropic בקובץ config.json ולהפעיל מחדש את השרת. בינתיים אפשר להתחיל עם סיפורי הדוגמה למטה.";
+  $("noAI").classList.remove("hidden");
+}
+fetch("/api/status").then(r=>r.json()).then(s=>{ status=s; if(!s.anthropic) showNoAI(); buildVoiceSelect(); $("voice").value=defaultVoice(character); voiceNote(); }).catch(()=>{ showNoAI(); });
+async function askClaude(prompt,maxTokens){
+  const r=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,maxTokens})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw {code:j.error||("http_"+r.status), detail:j.detail};
+  return j.text;
+}
+
+/* ---------- speech ---------- */
+let heVoices=[], engine=null, audioEl=null, audioCtx=null, analyser=null, ampFn=null, paused=false, silentTimer=null, speakToken=0;
+const MALE_RE=/asaf|avri|ariel|david|male|גבר|אסף|אברי/i;
+function hasEleven(){ return !!(status.elevenlabs && status.voices && status.voices[character]); }
+function defaultVoice(n){ const c=CHARACTERS[n]; return (status.elevenlabs&&status.voices&&status.voices[n])?"eleven":(c.g==="m"?"male1":"sys-f"); }
+function loadVoices(){
+  if(!("speechSynthesis" in window)) return;
+  heVoices=speechSynthesis.getVoices().filter(v=>/^(he|iw)/i.test(v.lang));
+  buildVoiceSelect();
+}
+function maleVoices(){ return heVoices.filter(v=>MALE_RE.test(v.name)); }
+function buildVoiceSelect(){
+  const sel=$("voice"), cur=sel.value;
+  let h=`<option value="eleven">קול הדמות (ElevenLabs)</option>
+    <optgroup label="קולות של המחשב"><option value="sys-f">קול נשי</option><option value="male1">קול גברי 1</option><option value="male2">קול גברי 2</option>
+    ${heVoices.map(v=>`<option value="sys:${esc(v.name)}">${esc(v.name)}${MALE_RE.test(v.name)?" (גבר)":""}</option>`).join("")}</optgroup>`;
+  sel.innerHTML=h;
+  sel.value=[...sel.options].some(o=>o.value===cur)?cur:defaultVoice(character);
+  voiceNote();
+}
+function resolveVoice(val){
+  if(val==="eleven") return hasEleven()?{engine:"eleven"}:resolveVoice(G("sys-f","male1"));
+  if(val.startsWith("sys:")){ const v=heVoices.find(x=>x.name===val.slice(4)); return v?{engine:"sys",voice:v,pitch:1}:null; }
+  const m=maleVoices(), base=heVoices[0], fem=heVoices.find(v=>!MALE_RE.test(v.name));
+  if(val==="sys-f") return fem?{engine:"sys",voice:fem,pitch:1}:base?{engine:"sys",voice:base,pitch:1.15}:null;
+  if(val==="male1") return m[0]?{engine:"sys",voice:m[0],pitch:1}:base?{engine:"sys",voice:base,pitch:.62}:null;
+  if(val==="male2") return m[1]?{engine:"sys",voice:m[1],pitch:1}:m[0]?{engine:"sys",voice:m[0],pitch:.8}:base?{engine:"sys",voice:base,pitch:.5}:null;
+  return null;
+}
+function voiceNote(){
+  const v=$("voice").value, n=$("voiceNote");
+  let t="";
+  if(v==="eleven" && !status.elevenlabs) t="לא הוגדר מפתח ElevenLabs בקובץ config.json, אז ישמע קול של המחשב.";
+  else if(v==="eleven" && !hasEleven()) t=`לא הוגדר קול ElevenLabs ל${character} בקובץ config.json, אז ישמע קול של המחשב.`;
+  else if(v!=="eleven" && !heVoices.length) t="לא נמצא קול עברי במחשב. אפשר להוסיף ב-macOS: הגדרות מערכת ← נגישות ← תוכן מוקרא ← קול המערכת ← ניהול קולות ← עברית.";
+  n.textContent=t; n.classList.toggle("hidden",!t);
+}
+buildVoiceSelect();
+if("speechSynthesis" in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+
+const ttsCache=new Map();
+function ttsUrl(text,rate){
+  const key=character+"|"+rate+"|"+text;
+  if(!ttsCache.has(key)){
+    ttsCache.set(key, fetch("/api/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text,character,speed:rate})})
+      .then(async r=>{ if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.detail||j.error||("http_"+r.status)); } return URL.createObjectURL(await r.blob()); })
+      .catch(e=>{ ttsCache.delete(key); throw e; }));
+  }
+  return ttsCache.get(key);
+}
+function prefetch(text){ if($("voice").value==="eleven" && hasEleven()) ttsUrl(text,+$("rate").value).catch(()=>{}); }
+function ensureAudio(){
+  if(audioEl) return;
+  audioEl=new Audio();
+  try{
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const src=audioCtx.createMediaElementSource(audioEl);
+    analyser=audioCtx.createAnalyser(); analyser.fftSize=512;
+    src.connect(analyser); analyser.connect(audioCtx.destination);
+  }catch(_){ analyser=null; }
+}
+function playAudio(url,my){
+  return new Promise(res=>{
+    ensureAudio();
+    if(audioCtx&&audioCtx.state==="suspended") audioCtx.resume();
+    audioEl.src=url;
+    const buf=analyser?new Uint8Array(analyser.fftSize):null;
+    const done=()=>{ if(my===speakToken){ ampFn=null; setSpeaking(false);} res(); };
+    audioEl.onended=done; audioEl.onerror=done;
+    audioEl.onplaying=()=>{ if(my!==speakToken) return; ampFn=analyser?()=>{ analyser.getByteTimeDomainData(buf); let s=0; for(let i=0;i<buf.length;i++){const d=(buf[i]-128)/128; s+=d*d;} return Math.sqrt(s/buf.length); }:null; setSpeaking(true); };
+    audioEl.play().catch(done);
+  });
+}
+function speakBrowser(text,r,rate){
+  engine="sys";
+  return new Promise(res=>{
+    const u=new SpeechSynthesisUtterance(text); u.voice=r.voice; u.lang=r.voice.lang; u.rate=rate; u.pitch=r.pitch;
+    u.onstart=()=>setSpeaking(true);
+    u.onend=u.onerror=()=>{setSpeaking(false);res();};
+    speechSynthesis.speak(u);
+  });
+}
+async function speak(text){
+  stopSpeech();
+  const my=++speakToken, rate=+$("rate").value, r=resolveVoice($("voice").value);
+  paused=false; $("pauseBtn").textContent="השהה";
+  if(r&&r.engine==="eleven"){
+    engine="eleven";
+    $("speakText").textContent="טוען קול…"; $("speakingInd").classList.remove("hidden");
+    try{
+      const url=await ttsUrl(text,rate);
+      $("speakText").textContent=G("מדברת…","מדבר…");
+      if(my!==speakToken) return;
+      return await playAudio(url,my);
+    }catch(e){
+      console.warn("ElevenLabs:",e.message);
+      $("speakText").textContent=G("מדברת…","מדבר…"); $("speakingInd").classList.add("hidden");
+      if(my!==speakToken) return;
+      const fb=resolveVoice(G("sys-f","male1"));
+      if(fb) return speakBrowser(text,fb,rate);
+    }
+  }
+  if(r&&r.engine==="sys") return speakBrowser(text,r,rate);
+  engine=null; setSpeaking(true); const ms=Math.min(9000,Math.max(1500,text.length*55/rate));
+  return new Promise(res=>{ silentTimer=setTimeout(()=>{setSpeaking(false);res();},ms); });
+}
+function stopSpeech(){
+  speakToken++;
+  if(audioEl){ try{audioEl.pause();}catch(_){} }
+  if("speechSynthesis" in window) speechSynthesis.cancel();
+  clearTimeout(silentTimer); ampFn=null; setSpeaking(false);
+}
+$("pauseBtn").onclick=()=>{
+  if(engine==="eleven"&&audioEl){ if(paused){ audioEl.play(); setSpeaking(true);} else { audioEl.pause(); setSpeaking(false);} }
+  else if(engine==="sys"){ paused? speechSynthesis.resume(): speechSynthesis.pause(); setSpeaking(paused); }
+  paused=!paused;
+  $("pauseBtn").textContent = paused?"המשך הקראה":"השהה";
+};
+$("voice").onchange=voiceNote;
+$("testVoice").onclick=()=>{ mood("happy"); const t=`שלום, אני ${character}. ככה אני ${G("נשמעת","נשמע")} במהירות הזאת.`; say(t); speak(t); };
+
+/* ---------- generation ---------- */
+function buildPrompt(){
+  const d=DIFFS[settings.diff], L=LENGTHS[settings.len];
+  const topic=$("customTopic").value.trim()||settings.topic;
+  const personal=$("personal").value.trim();
+  const qCount = $("midQs").checked ? Math.max(2, Math.ceil(L.segs*0.6)) : 0;
+  return `You write therapeutic listening stories in Hebrew for cognitive occupational therapy with ADULTS recovering from mild traumatic brain injury (concussion). The story is read aloud, split into segments, with comprehension and memory questions during and after.
+
+Settings:
+- Topic: ${topic}
+- Difficulty: ${settings.diff} (${d.hint})
+- Segments: exactly ${L.segs}, each ${L.words} Hebrew words
+- Mid-story questions: ${qCount} (attach each to a different segment; set "question": null on the rest)
+- End-of-story questions: exactly ${L.finals}
+- Options per question: exactly ${d.opts}
+${personal?`- Personal interest to weave in naturally: ${personal}`:""}
+
+Rules:
+- Natural modern Hebrew without niqqud. Adult, respectful tone, never childish.
+- Calm, warm, positive content with a clear beginning, middle and end. Do NOT include car accidents, falls, injuries, hospitals, illness, death, violence, loss, or anything distressing for someone after a head injury.
+- Concrete, imageable details (names, colors, objects, places, times) that questions can test. "קל": 1–2 characters, short simple sentences. "בינוני": 2–3 characters, time and place details. "מאתגר": 3–4 characters, names and numbers, more details per segment.
+- Each question has exactly one correct answer that is unambiguous from the story. Distractors are plausible but clearly wrong per the story. Put the correct option at index 0 (the page shuffles them).
+- "type" is one of "פרטים" (explicit detail), "רצף" (order of events), "הסקה" (simple inference). "קל": mostly פרטים plus one רצף. "בינוני": פרטים and רצף plus one הסקה. "מאתגר": all three.
+- Mid-story questions ask only about what was told so far. End-of-story questions cover the whole story, preferring earlier details.
+- "keyPoints": 4–7 short Hebrew sentences with the main story points, used to check a free retelling.
+
+Return ONLY a JSON object, no markdown, in this exact shape:
+{"title":"...","segments":[{"text":"...","question":{"q":"...","options":["correct","...","..."],"answer":0,"type":"פרטים"}},{"text":"...","question":null}],"final":[{"q":"...","options":["correct","...","..."],"answer":0,"type":"רצף"}],"keyPoints":["..."]}`;
+}
+function validQ(q){return q&&typeof q.q==="string"&&Array.isArray(q.options)&&q.options.length>=2&&Number.isInteger(+q.answer)&&+q.answer>=0&&+q.answer<q.options.length;}
+function normalize(s){
+  if(typeof s==="string"){ const m=s.match(/\{[\s\S]*\}/); s=m?JSON.parse(m[0]):null; }
+  if(!s||!Array.isArray(s.segments)||!s.segments.length) throw {code:"bad_format"};
+  s.segments=s.segments.filter(x=>x&&typeof x.text==="string").map(x=>({text:x.text,question:validQ(x.question)?{...x.question,answer:+x.question.answer}:null}));
+  s.final=(s.final||[]).filter(validQ).map(q=>({...q,answer:+q.answer}));
+  s.keyPoints=Array.isArray(s.keyPoints)?s.keyPoints:[];
+  s.title=s.title||"סיפור";
+  return s;
+}
+function genStatus(t,err){ $("genStatus").textContent=t; $("genStatus").classList.toggle("err",!!err); }
+$("genBtn").onclick=async()=>{
+  if(!status.anthropic){ showNoAI(); genStatus("חסר מפתח Anthropic בקובץ config.json.",true); return; }
+  $("genBtn").disabled=true;
+  mood("think"); say(`רגע, אני ${G("חושבת","חושב")} על סיפור חדש בשבילכם…`);
+  genStatus("כותב סיפור חדש… זה לוקח כחצי דקה.");
+  try{
+    const raw=await askClaude(buildPrompt(),4000);
+    const st=normalize(raw);
+    st.level=settings.diff; st.topic=$("customTopic").value.trim()||settings.topic;
+    genStatus("");
+    startStory(st);
+  }catch(e){
+    const code=e&&e.code;
+    if(code==="anthropic_401") genStatus("מפתח Anthropic לא תקין. בדקו אותו בקובץ config.json.",true);
+    else if(code==="anthropic_429") genStatus("יותר מדי בקשות כרגע. נסו שוב בעוד דקה.",true);
+    else genStatus("לא הצלחתי ליצור סיפור"+(code?` (${code})`:"")+". נסו שוב, או בחרו סיפור דוגמה.",true);
+    greet();
+  }finally{ $("genBtn").disabled=false; }
+};
+
+/* ---------- session flow ---------- */
+let story=null, seg=0, log=[], startedAt=0, finalIdx=0;
+function show(id){["setup","storyView","questionView","recallView","summaryView"].forEach(v=>$(v).classList.toggle("hidden",v!==id)); window.scrollTo({top:0});}
+function startStory(s){
+  story=s; seg=0; log=[]; startedAt=Date.now(); recallTextVal=""; aiFeedbackText="";
+  $("storyTitle").textContent=s.title;
+  $("progress").innerHTML=s.segments.map(()=>"<span></span>").join("");
+  show("storyView"); playSegment();
+}
+function playSegment(){
+  const s=story.segments[seg];
+  mood("neutral");
+  [...$("progress").children].forEach((el,i)=>{el.className=i<seg?"done":i===seg?"now":"";});
+  const showText=$("showText").checked;
+  if(showText) say(s.text); else say("הקשיבו היטב… (הטקסט מוסתר לתרגול זיכרון שמיעתי)",{masked:true});
+  $("revealBtn").classList.toggle("hidden",showText);
+  $("nextBtn").textContent = seg===story.segments.length-1 ? "לשאלות" : "המשך";
+  speak((seg===0?story.title+". ":"")+s.text);
+  const nx=story.segments[seg+1]; if(nx) prefetch(nx.text);
+}
+$("replayBtn").onclick=()=>speak(story.segments[seg].text);
+$("revealBtn").onclick=()=>say(story.segments[seg].text);
+$("quitBtn").onclick=()=>{stopSpeech(); show("setup"); greet();};
+$("nextBtn").onclick=()=>{
+  stopSpeech();
+  const s=story.segments[seg];
+  if($("midQs").checked && s.question) askQuestion(s.question,"במהלך הסיפור",afterMid);
+  else afterMid();
+};
+function afterMid(){
+  seg++;
+  if(seg<story.segments.length){ show("storyView"); playSegment(); }
+  else { finalIdx=0; nextFinal(); }
+}
+function nextFinal(){
+  if(finalIdx<story.final.length){ const q=story.final[finalIdx++]; askQuestion(q,"סוף הסיפור",nextFinal); }
+  else if($("recall").checked){
+    show("recallView"); $("recallText").value=""; mood("happy");
+    const t="עכשיו תורכם. ספרו לי את הסיפור במילים שלכם: מה קרה, מי היו הדמויות ומה קרה בסוף.";
+    say(t); speak(t);
+  }
+  else finish();
+}
+
+/* ---------- questions ---------- */
+let currentQ=null;
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function askQuestion(q,phase,then){
+  show("questionView"); currentQ=q; mood("think");
+  $("qType").textContent=(q.type||"פרטים")+" · "+phase;
+  say(q.q);
+  $("qNext").classList.add("hidden");
+  const box=$("qOptions"); box.innerHTML="";
+  const order=shuffle(q.options.map((t,i)=>({t,i})));
+  let attempts=0;
+  const done=(correct,solved)=>{
+    log.push({phase,type:q.type||"פרטים",q:q.q,correct,solved,attempts,answer:q.options[q.answer]});
+    $("qNext").classList.remove("hidden"); $("qNext").focus();
+    $("qNext").onclick=()=>{stopSpeech();then();};
+  };
+  order.forEach(o=>{
+    const b=document.createElement("button"); b.type="button"; b.className="opt"; b.textContent=o.t;
+    b.onclick=()=>{
+      attempts++; stopSpeech();
+      if(o.i===q.answer){
+        b.classList.add("correct"); [...box.children].forEach(c=>c.disabled=true);
+        mood("happy"); const t=attempts===1?"נכון, כל הכבוד!":"נכון! מצאתם את התשובה."; say(t); speak(t);
+        done(attempts===1,true);
+      } else {
+        b.classList.add("wrong"); b.disabled=true;
+        if(attempts>=2){
+          [...box.children].forEach(c=>{c.disabled=true; if(c.textContent===q.options[q.answer]) c.classList.add("correct");});
+          mood("encourage"); const t="התשובה הנכונה היא: "+q.options[q.answer]+". זה בסדר, נמשיך הלאה."; say(t); speak(t);
+          done(false,false);
+        } else {
+          mood("encourage"); const t=`לא בדיוק. נסו שוב, אני ${G("בטוחה","בטוח")} שתיזכרו.`; say(q.q+"\n"+t); speak(t);
+        }
+      }
+    };
+    box.appendChild(b);
+  });
+  speak(q.q+" "+order.map(o=>o.t).join(". "));
+}
+$("qRepeat").onclick=()=>{ if(currentQ){ const opts=[...$("qOptions").children].map(c=>c.textContent); speak(currentQ.q+" "+opts.join(". ")); } };
+
+/* ---------- free recall ---------- */
+let recallTextVal="", aiFeedbackText="", listening=false, rec=null;
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR) $("micBtn").classList.remove("hidden");
+function stopDictation(){ if(listening&&rec){ try{rec.stop();}catch(_){} } }
+$("micBtn").onclick=()=>{
+  if(!SR) return;
+  if(listening){ stopDictation(); return; }
+  stopSpeech();
+  rec=new SR(); rec.lang="he-IL"; rec.continuous=true; rec.interimResults=false;
+  rec.onresult=e=>{ for(let i=e.resultIndex;i<e.results.length;i++) if(e.results[i].isFinal){ const ta=$("recallText"); ta.value=(ta.value?ta.value+" ":"")+e.results[i][0].transcript.trim(); } };
+  rec.onend=()=>{ listening=false; $("micBtn").textContent="הכתבה בקול"; };
+  rec.onerror=e=>{ if(e.error==="not-allowed") $("micBtn").classList.add("hidden"); };
+  try{ rec.start(); listening=true; $("micBtn").textContent="עצור הכתבה"; }catch(_){}
+};
+$("recallSkip").onclick=()=>{ stopDictation(); recallTextVal=""; finish(); };
+$("recallDone").onclick=async()=>{
+  stopDictation();
+  recallTextVal=$("recallText").value.trim();
+  finish();
+  if(recallTextVal && status.anthropic){
+    $("aiFeedbackWrap").classList.remove("hidden");
+    $("aiFeedback").textContent="בודק את השחזור…";
+    const prompt=`You support an occupational therapist. A Hebrew-speaking adult recovering from mild TBI heard a story and retold it. Compare the retelling to the story's key points.
+Write in Hebrew, warm and encouraging, addressed to the patient in plural form ("זכרתם"), max 90 words:
+1) one line of genuine praise,
+2) "נקודות שנזכרו: X מתוך N" and list them briefly,
+3) gently name the points that were missed,
+4) if the order of events was kept, say so.
+No medical judgments. Plain text, no markdown.
+
+Story: ${story.segments.map(s=>s.text).join(" ")}
+Key points: ${JSON.stringify(story.keyPoints)}
+Retelling: ${recallTextVal}`;
+    try{ aiFeedbackText=await askClaude(prompt,700); $("aiFeedback").textContent=aiFeedbackText; }
+    catch(e){ $("aiFeedback").textContent="לא הצלחתי לבדוק את השחזור כרגע. השחזור נשמר בסיכום."; }
+  }
+};
+
+/* ---------- summary ---------- */
+function frac(a){return a.length?a.filter(x=>x.correct).length+"/"+a.length:"—";}
+function pct(a){return a.length?Math.round(100*a.filter(x=>x.correct).length/a.length)+"%":"—";}
+function finish(){
+  stopSpeech(); show("summaryView"); mood("happy");
+  const t="סיימנו את הסיפור. עבדתם יפה! הנה סיכום המפגש."; say(t); speak(t);
+  if(!recallTextVal) $("aiFeedbackWrap").classList.add("hidden");
+  const mins=Math.max(1,Math.round((Date.now()-startedAt)/60000));
+  const mid=log.filter(x=>x.phase==="במהלך הסיפור"), fin=log.filter(x=>x.phase==="סוף הסיפור");
+  const byType=t=>log.filter(x=>x.type===t);
+  const tiles=[["נכון בניסיון ראשון",pct(log),frac(log)],["במהלך הסיפור",pct(mid),frac(mid)],["סוף הסיפור",pct(fin),frac(fin)],["משך",mins+" דק׳",""]];
+  $("stats").innerHTML=tiles.map(([l,v,s])=>`<div class="stat"><b>${v}</b><span>${l}${s?" · "+s:""}</span></div>`).join("");
+  const types=["פרטים","רצף","הסקה"].filter(t=>byType(t).length);
+  $("detailTable").innerHTML="<tr><th>שאלה</th><th>סוג</th><th>שלב</th><th>תוצאה</th></tr>"+
+    log.map(r=>`<tr><td>${esc(r.q)}<br><span class="hint">${esc(r.answer)}</span></td><td>${r.type}</td><td>${r.phase}</td><td><span class="pill ${r.correct?"ok":r.solved?"mid":"no"}">${r.correct?"נכון":r.solved?"בניסיון שני":"לא נענה נכון"}</span></td></tr>`).join("")+
+    (types.length?`<tr><th colspan="4">לפי סוג: ${types.map(t=>t+" "+frac(byType(t))).join(" · ")}</th></tr>`:"");
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+$("copyBtn").onclick=()=>{
+  const d=new Date().toLocaleDateString("he-IL");
+  const lines=[
+    `מפגש סיפור טיפולי · ${d}`,
+    `סיפור: ${story.title} | נושא: ${story.topic||""} | רמה: ${story.level||""} | קטעים: ${story.segments.length}`,
+    `הגדרות: מהירות ${(+$("rate").value).toFixed(2)}, טקסט על המסך: ${$("showText").checked?"כן":"לא"}, שאלות במהלך: ${$("midQs").checked?"כן":"לא"}`,
+    `נכון בניסיון ראשון: ${frac(log)} (במהלך: ${frac(log.filter(x=>x.phase==="במהלך הסיפור"))}, בסוף: ${frac(log.filter(x=>x.phase==="סוף הסיפור"))})`,
+    ...["פרטים","רצף","הסקה"].map(t=>{const a=log.filter(x=>x.type===t);return a.length?`  ${t}: ${frac(a)}`:null;}).filter(Boolean),
+    recallTextVal?`שחזור חופשי: ${recallTextVal}`:"שחזור חופשי: לא בוצע",
+    aiFeedbackText?`משוב על השחזור: ${aiFeedbackText}`:""
+  ].filter(Boolean).join("\n");
+  navigator.clipboard.writeText(lines).then(()=>$("copyStatus").textContent="הועתק.").catch(()=>$("copyStatus").textContent="ההעתקה נחסמה. סמנו את הטבלה והעתיקו ידנית.");
+};
+$("againBtn").onclick=()=>startStory(story);
+$("newBtn").onclick=()=>{stopSpeech();show("setup");greet();};
+</script>
+</body>
+</html>
