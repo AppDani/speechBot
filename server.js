@@ -8,7 +8,6 @@ import { exec } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC = path.join(ROOT, "public");
 const CACHE = path.join(ROOT, "cache");
 const CONFIG_PATH = path.join(ROOT, "config.json");
 fs.mkdirSync(CACHE, { recursive: true });
@@ -87,10 +86,13 @@ async function handleTts(req, res) {
   send(res, 200, buf, "audio/mpeg");
 }
 
+// Only the page and the character images are served. config.json, server.js and the cache stay private.
 function serveStatic(req, res) {
   const url = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  const target = path.normalize(path.join(PUBLIC, url === "/" ? "index.html" : url));
-  if (!target.startsWith(PUBLIC)) return send(res, 403, "forbidden", "text/plain");
+  const rel = url === "/" ? "index.html" : url.replace(/^\/+/, "");
+  const allowed = rel === "index.html" || /^img\/[\w.-]+\.(jpg|jpeg|png|svg)$/i.test(rel);
+  const target = path.normalize(path.join(ROOT, rel));
+  if (!allowed || !target.startsWith(ROOT)) return send(res, 404, "not found", "text/plain");
   fs.readFile(target, (err, data) => {
     if (err) return send(res, 404, "not found", "text/plain");
     send(res, 200, data, TYPES[path.extname(target).toLowerCase()] || "application/octet-stream");
